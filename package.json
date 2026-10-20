@@ -1,0 +1,26 @@
+{
+  "name": "pi-cot",
+  "version": "0.1.0",
+  "description": "Adaptive, model-curated tool-output filtering for Pi",
+  "keywords": [
+    "pi-package"
+  ],
+  "type": "module",
+  "peerDependencies": {
+    "typebox": "*"
+  },
+  "scripts": {
+    "build": "bun build ./extensions/cot.ts --target=bun --external typebox --outdir ./dist",
+    "test": "bun test"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/cot.ts"
+    ]
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/RogerNavelsaker/pi-cot.git"
+  }
+}
