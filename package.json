@@ -7,15 +7,18 @@
   ],
   "type": "module",
   "peerDependencies": {
-    "typebox": "*"
+    "@earendil-works/pi-ai": "*"
+  },
+  "devDependencies": {
+    "typebox": "1.1.38"
   },
   "scripts": {
-    "build": "bun build ./extensions/cot.ts --target=bun --external typebox --outdir ./dist",
+    "build": "bun build ./extensions/cot.ts --target=bun --external @earendil-works/pi-ai --outdir ./dist",
     "test": "bun test"
   },
   "pi": {
     "extensions": [
-      "./extensions/cot.ts"
+      "./dist/cot.js"
     ]
   },
   "license": "MIT",
