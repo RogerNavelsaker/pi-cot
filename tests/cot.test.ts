@@ -30,7 +30,7 @@ afterAll(() => {
 
 test("capture, retrieve, filter, save, session-scope, and export", async () => {
   const names = [...tools.keys()].sort();
-  expect(names).toEqual(["cot_capture", "cot_filter", "cot_get", "cot_save_filter", "cot_vault"]);
+  expect(names).toEqual(["cot_capture", "cot_delete_filter", "cot_filter", "cot_get", "cot_save_filter", "cot_vault"]);
 
   const marker = `COT-TEST-${Math.random().toString(16).slice(2)}`;
   const capture = await tools.get("cot_capture").execute("test", {
@@ -73,6 +73,37 @@ test("capture, retrieve, filter, save, session-scope, and export", async () => {
     session_id: "cot-test-session",
   });
   expect(savedFilter.content[0].text).toContain(marker);
+
+  const pipeline = { steps: [
+    { type: "contains", query: "second-line" },
+    { type: "lines", start: 1, end: 1 },
+  ] };
+  const replaced = await tools.get("cot_save_filter").execute("test", {
+    name: filterName,
+    description: "Ordered test pipeline",
+    spec: pipeline,
+  });
+  expect(replaced.content[0].text).toContain("Saved filter");
+  const pipelineResult = await tools.get("cot_filter").execute("test", { handle, filter: filterName });
+  expect(pipelineResult.content[0].text).toContain("second-line");
+  const invalidPipeline = await tools.get("cot_filter").execute("test", {
+    handle, spec: { steps: [{ type: "unknown" }] },
+  });
+  expect(invalidPipeline.content[0].text).toContain("Invalid pipeline step 1");
+  const oversizedPipeline = await tools.get("cot_filter").execute("test", {
+    handle, spec: { steps: Array.from({ length: 21 }, () => ({ type: "lines" })) },
+  });
+  expect(oversizedPipeline.content[0].text).toContain("exceeds 20 steps");
+
+  const filters = await tools.get("cot_filter").execute("test", {});
+  expect(filters.content[0].text).toContain(filterName);
+  const deleted = await tools.get("cot_delete_filter").execute("test", { name: filterName });
+  expect(deleted.content[0].text).toContain("Deleted filter");
+  const afterDelete = await tools.get("cot_filter").execute("test", {});
+  expect(afterDelete.content[0].text).toContain("No saved filters.");
+
+  const rawAfterFilter = await tools.get("cot_get").execute("test", { handle });
+  expect(rawAfterFilter.content[0].text).toContain("second-line");
 
   const listed = await tools.get("cot_vault").execute("test", {
     action: "list",

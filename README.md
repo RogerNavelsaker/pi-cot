@@ -24,8 +24,8 @@ The GitHub repository must exist before these commands work. Pi's documented Git
 
 - Stores textual tool results in SQLite and returns a handle when output exceeds its inline threshold.
 - Retrieves stored output by handle, with pagination and optional session scoping.
-- Applies declarative `lines`, `contains`, `regex`, and `json-path` filters.
-- Saves and reuses filters through the `cot_save_filter` tool.
+- Applies declarative lines, contains, regex, and json-path filters, individually or as ordered pipelines; each step consumes the previous step’s output.
+- Saves, replaces, lists, applies, and deletes reusable filters.
 - Lists sessions; lists and searches outputs by session. Cross-session search requires explicit `all_sessions: true`.
 - Expires output at startup (30 days by default), reports storage size warnings, supports dry-run-first pruning, and creates explicit SQLite backups.
 
@@ -73,3 +73,7 @@ The package declares `typebox` as a peer dependency provided by Pi. No compatibi
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Filter pipelines
+
+A saved pipeline composes existing filter specs in order; it does not execute generated code. Example: {"steps":[{"type":"contains","query":"error"},{"type":"lines","start":1,"end":20}]}. Retrieve the original output with cot_get at any time. Delete a saved filter by name with cot_delete_filter.

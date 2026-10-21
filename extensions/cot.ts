@@ -37,10 +37,44 @@ const codemodeThreshold = Number.isFinite(configuredCodemodeThreshold) && config
 const id = () => crypto.randomUUID();
 const textOf = (content: any[]) => content.filter(x => x.type === "text").map(x => x.text).join("\n");
 const reply = (s: string) => ({ content: [{ type: "text" as const, text: s }] });
+const filterTypes = ["lines", "contains", "regex", "json-path"];
+function validateFilterSpec(spec: any): string | undefined {
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return "Filter spec must be an object.";
+  if (Array.isArray(spec.steps)) {
+    if (!spec.steps.length) return "Filter pipeline must contain at least one step.";
+    if (spec.steps.length > 20) return "Filter pipeline exceeds 20 steps.";
+    for (const [index, step] of spec.steps.entries()) {
+      if (step && Array.isArray(step.steps)) return "Nested filter pipelines are not supported.";
+      const error = validateFilterSpec(step);
+      if (error) return "Invalid pipeline step " + (index + 1) + ": " + error;
+    }
+    return;
+  }
+  if (!filterTypes.includes(spec.type)) return "Unsupported filter type.";
+  if (spec.type === "contains" && typeof spec.query !== "string") return "Contains filter requires a string query.";
+  if (spec.type === "regex") {
+    if (typeof spec.pattern !== "string" || spec.pattern.length > 500) return "Regex pattern required (max 500 chars).";
+    try { new RegExp(spec.pattern, spec.flags ?? "i"); } catch (e) { return String(e); }
+  }
+  if (spec.type === "json-path" && typeof spec.path !== "string") return "JSON path required.";
+}
+function applyFilter(input: string, spec: any): string {
+  if (Array.isArray(spec.steps)) return spec.steps.reduce((value: string, step: any) => applyFilter(value, step), input);
+  const limit = Math.min(200, spec.limit ?? 80);
+  if (spec.type === "lines") return input.split("\n").slice(Math.max(0, (spec.start ?? 1) - 1), spec.end ?? 100).join("\n");
+  if (spec.type === "contains") return input.split("\n").filter(x => x.toLowerCase().includes(spec.query.toLowerCase())).slice(0, limit).join("\n");
+  if (spec.type === "regex") {
+    const re = new RegExp(spec.pattern, spec.flags ?? "i");
+    return input.split("\n").filter(x => { re.lastIndex = 0; return re.test(x); }).slice(0, limit).join("\n");
+  }
+  let value: any = JSON.parse(input);
+  for (const key of spec.path.split(".")) value = value?.[key];
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
 
 export default function (pi: any) {
   pi.on("tool_result", (event: any) => {
-    if (["cot_get", "cot_filter", "cot_save_filter", "cot_capture", "cot_vault"].includes(event.toolName)) return;
+    if (["cot_get", "cot_filter", "cot_save_filter", "cot_delete_filter", "cot_capture", "cot_vault"].includes(event.toolName)) return;
     const body = textOf(event.content);
     if (!body) return;
     const key = id();
@@ -161,7 +195,7 @@ Use cot_vault({action:"status"}) to inspect storage. Pruning is a dry run by def
 
   pi.registerTool({
     name: "cot_filter", label: "Output filter",
-    description: "List reusable filters or search/filter/extract a stored output handle using an inline spec or saved filter; optionally scope retrieval to a session_id. Supports lines, contains, regex, json-path.",
+    description: "List reusable filters or search/filter/extract a stored output handle using an inline spec or saved filter; optionally scope retrieval to a session_id. Supports lines, contains, regex, json-path, and ordered steps.",
     promptSnippet: "Apply or list saved output filters.",
     parameters: Type.Object({
       handle: Type.Optional(Type.String()), session_id: Type.Optional(Type.String()),
@@ -184,40 +218,39 @@ Use cot_vault({action:"status"}) to inspect storage. Pruning is a dry run by def
         spec = JSON.parse(saved.spec);
       }
       if (!spec) return reply("Provide an inline spec, a saved filter name, or call cot_filter without a handle to list saved filters.");
-      const limit = Math.min(200, spec.limit ?? 80);
       const input = row.body as string;
+      const error = validateFilterSpec(spec);
+      if (error) return reply(error);
       let result: string;
-      if (spec.type === "lines") result = input.split("\n").slice(Math.max(0, (spec.start ?? 1) - 1), spec.end ?? 100).join("\n");
-      else if (spec.type === "contains") result = input.split("\n").filter(x => x.toLowerCase().includes(String(spec.query ?? "").toLowerCase())).slice(0, limit).join("\n");
-      else if (spec.type === "regex") {
-        const re = new RegExp(spec.pattern, spec.flags ?? "i");
-        result = input.split("\n").filter(x => { re.lastIndex = 0; return re.test(x); }).slice(0, limit).join("\n");
-      } else if (spec.type === "json-path") {
-        let value: any = JSON.parse(input);
-        for (const key of String(spec.path).split(".")) value = value?.[key];
-        result = typeof value === "string" ? value : JSON.stringify(value, null, 2);
-      } else return reply("Unsupported filter type.");
+      try { result = applyFilter(input, spec); } catch (e) { return reply(String(e)); }
       return reply(result.slice(0, 24000) || "(no matches)");
     },
   });
 
   pi.registerTool({
     name: "cot_save_filter", label: "Save output filter",
-    description: "Save or replace a reusable declarative filter in SQLite. Filter types: lines, contains, regex, json-path.",
+    description: "Save or replace a reusable declarative filter or ordered pipeline in SQLite. Filter types: lines, contains, regex, json-path.",
     promptSnippet: "Save a reusable output filter.",
     parameters: Type.Object({
       name: Type.String(), description: Type.String(), spec: Type.Object({}, { additionalProperties: true }),
     }),
     async execute(_id: string, p: any) {
-      const type = p.spec?.type;
-      if (!["lines", "contains", "regex", "json-path"].includes(type)) return reply("Unsupported filter type.");
-      if (type === "regex") {
-        if (typeof p.spec.pattern !== "string" || p.spec.pattern.length > 500) return reply("Regex pattern required (max 500 chars).");
-        try { new RegExp(p.spec.pattern, p.spec.flags ?? "i"); } catch (e) { return reply(String(e)); }
-      }
+      const error = validateFilterSpec(p.spec);
+      if (error) return reply(error);
       db.prepare("INSERT INTO filters VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET description=excluded.description, spec=excluded.spec, updated_at=excluded.updated_at")
         .run(p.name, p.description, JSON.stringify(p.spec), new Date().toISOString());
       return reply(`Saved filter "${p.name}".`);
+    },
+  });
+
+  pi.registerTool({
+    name: "cot_delete_filter", label: "Delete output filter",
+    description: "Delete a saved output filter by name.",
+    promptSnippet: "Delete a saved output filter.",
+    parameters: Type.Object({ name: Type.String() }),
+    async execute(_id: string, p: any) {
+      const changes = db.prepare("DELETE FROM filters WHERE name=?").run(p.name).changes;
+      return reply(changes ? "Deleted filter " + JSON.stringify(p.name) + "." : "No saved filter named " + JSON.stringify(p.name) + ".");
     },
   });
 }
