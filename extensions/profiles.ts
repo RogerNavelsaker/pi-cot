@@ -9,7 +9,7 @@ export interface ToolTarget {
   selector: FilterSelector;
 }
 
-const filterTypes = ["lines", "contains", "regex", "json-path", "truncate"];
+const filterTypes = ["lines", "contains", "regex", "json-path", "truncate", "dedupe"];
 
 function shellCommandStart(command: string): string {
   let start = command.trimStart();
@@ -159,15 +159,55 @@ export function validateFilterSpec(spec: any): string | undefined {
   }
 }
 
+function summarizeRepeatedLines(input: string): string {
+  const trailingNewline = input.endsWith("\n");
+  const lines = input.split("\n");
+  if (trailingNewline) lines.pop();
+
+  const locations = new Map<string, number[]>();
+  lines.forEach((line, index) => {
+    const lineNumbers = locations.get(line) ?? [];
+    lineNumbers.push(index + 1);
+    locations.set(line, lineNumbers);
+  });
+
+  const formatLocations = (lineNumbers: number[]) => {
+    const ranges: string[] = [];
+    for (let start = 0; start < lineNumbers.length;) {
+      let end = start;
+      while (end + 1 < lineNumbers.length && lineNumbers[end + 1] === lineNumbers[end] + 1) end++;
+      ranges.push(start === end ? String(lineNumbers[start]) : lineNumbers[start] + "-" + lineNumbers[end]);
+      start = end + 1;
+    }
+    return ranges.join(", ");
+  };
+
+  const summary = lines.flatMap((line, index) => {
+    const lineNumbers = locations.get(line)!;
+    if (lineNumbers[0] !== index + 1) return [];
+    return [lineNumbers.length === 1
+      ? line
+      : `[${lineNumbers.length} occurrences; lines ${formatLocations(lineNumbers)}] ${JSON.stringify(line)}`];
+  }).join("\n") + (trailingNewline ? "\n" : "");
+  return summary.length < input.length ? summary : input;
+}
+
 export function applyFilter(input: string, spec: any): string {
   if (Array.isArray(spec.steps)) return spec.steps.reduce((value: string, step: any) => applyFilter(value, step), input);
   const limit = Math.min(200, spec.limit ?? 80);
   if (spec.type === "lines") return input.split("\n").slice(Math.max(0, (spec.start ?? 1) - 1), spec.end ?? 100).join("\n");
-  if (spec.type === "contains") return input.split("\n").filter(x => x.toLowerCase().includes(spec.query.toLowerCase())).slice(0, limit).join("\n");
+  const matchingLines = (matches: (line: string) => boolean) => input.split("\n")
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => matches(line))
+    .slice(0, limit)
+    .map(({ line, index }) => `${index + 1}: ${line}`)
+    .join("\n");
+  if (spec.type === "contains") return matchingLines(line => line.toLowerCase().includes(spec.query.toLowerCase()));
   if (spec.type === "regex") {
     const re = new RegExp(spec.pattern, spec.flags ?? "i");
-    return input.split("\n").filter(x => { re.lastIndex = 0; return re.test(x); }).slice(0, limit).join("\n");
+    return matchingLines(line => { re.lastIndex = 0; return re.test(line); });
   }
+  if (spec.type === "dedupe") return summarizeRepeatedLines(input);
   if (spec.type === "truncate") {
     const lines = input.split("\n");
     if (lines.length <= spec.maxLines) return input;
