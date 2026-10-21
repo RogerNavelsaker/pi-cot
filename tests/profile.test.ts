@@ -3,9 +3,9 @@ import {
   applyFilter,
   deriveTarget,
   matchesSelector,
-  redactSecrets,
   validateFilterSpec,
   validateGeneratedProfile,
+  BUILTIN_FILTERS,
 } from "../extensions/profiles.ts";
 
 test("shell target keys include the command family", () => {
@@ -17,6 +17,15 @@ test("shell target keys include the command family", () => {
     key: "bash:ls",
     selector: { toolName: "bash", commandPrefix: "ls" },
   });
+});
+
+test("shell matching handles leading cd and environment assignments", () => {
+  const command = "cd '/repo' && CI=1 cargo test --lib";
+  expect(deriveTarget("bash", { command })).toEqual({
+    key: "bash:cargo test",
+    selector: { toolName: "bash", commandPrefix: "cargo test" },
+  });
+  expect(matchesSelector("bash", { command }, { toolName: "bash", commandPrefix: "cargo test" })).toBe(true);
 });
 
 test("non-shell target keys do not retain call arguments", () => {
@@ -85,4 +94,27 @@ test("generated profile activates only after model and local validation", () => 
     spec: { type: "json-path", path: "absent" },
     validation: { passed: true, examples: 3 },
   }, ['{"status":"error"}', '{"status":"warning"}', '{"status":"notice"}']).ok).toBe(false);
+});
+
+
+test("built-in catalog covers 100+ command patterns with unique names", () => {
+  expect(BUILTIN_FILTERS.length).toBeGreaterThanOrEqual(100);
+  expect(new Set(BUILTIN_FILTERS.map(profile => profile.name)).size).toBe(BUILTIN_FILTERS.length);
+  const examples = [
+    ["adb logcat", "adb"], ["git diff --stat", "git diff"], ["cargo test --lib", "cargo test"],
+    ["gh pr checks", "gh pr checks"], ["terraform plan", "terraform"], ["python3 -c 'print(1)'", "python3"],
+  ];
+  for (const [command, prefix] of examples) {
+    const profile = BUILTIN_FILTERS.find(item => item.selector.commandPrefix === prefix)!;
+    expect(matchesSelector("bash", { command }, profile.selector)).toBe(true);
+    expect(validateFilterSpec(profile.spec)).toBeUndefined();
+  }
+  const adb = BUILTIN_FILTERS.find(profile => profile.selector.commandPrefix === "adb")!;
+  const logs = BUILTIN_FILTERS.find(profile => profile.selector.commandPrefix === "docker logs")!;
+  const output = Array.from({ length: 200 }, (_, index) => `line ${index}`).join("\n");
+  expect(applyFilter(output, adb.spec)).toContain("lines omitted");
+  const filteredLogs = applyFilter(output, logs.spec);
+  expect(filteredLogs).toContain("line 0");
+  expect(filteredLogs).toContain("line 199");
+  expect(logs.spec.headLines).toBeLessThan(logs.spec.tailLines);
 });
