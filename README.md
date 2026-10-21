@@ -54,6 +54,20 @@ Manual profiles can target a tool and, for shell tools, a command family. For ex
 - `cot_filter`: list saved filters or filter a handle.
 - `cot_save_filter`: create/update a reusable declarative filter.
 
+## Slash commands
+
+- `/cot status` reports whether adaptive learning is enabled, the generation model, built-in/saved/learned profile counts, eligible sample groups, in-flight generation, last result, output limits, retention, and the storage-warning threshold.
+- `/cot settings` opens the settings menu for every runtime setting: adaptive learning, generation model, built-in filters, regular and codemode preview limits, output retention, and storage-warning threshold.
+- `/cot profiles` lists saved profiles; profile creation and updates remain available through the COT tools.
+
+Settings are global and stored in `~/.local/share/pi/COT/vault.sqlite`. Stored choices override environment defaults. Retention reductions that would delete stored outputs require confirmation.
+
+## Built-in filtering
+
+The first-run catalog contains **100+ command-prefix patterns** derived from [LeanCTX pattern families](https://github.com/yvgude/lean-ctx/tree/main/rust/src/core/patterns) and [RTK's command coverage table](https://www.rtk-ai.app/docs/resources/what-rtk-covers/). It spans Git/GitHub/Graphite; file and search tools; Rust, JavaScript/TypeScript, Python, Go, Ruby, .NET, JVM, PHP and other build/test tools; cloud, container, deployment and security CLIs; plus common language runtimes. The catalog uses deterministic head/tail line truncation with tail-heavy budgets for tests/builds/logs and head-heavy budgets for listings; it is a broad baseline, not a copy of every upstream command-specific formatter.
+
+Oversized output from any unmatched tool (including MCP tools) still gets a bounded head/tail character preview in the original response, and the full output remains available under a recovery handle. This follows [Context Mode](https://github.com/mksglu/context-mode)'s concise-first mindset; COT's own recovery handle preserves the raw output, without adding command execution, sandboxing or batch APIs. Most-specific selectors win; saved profiles win ties against built-ins.
+
 ## Configuration
 
 COT requires a Pi runtime that supports Bun's `bun:sqlite` module.
@@ -62,8 +76,8 @@ COT requires a Pi runtime that supports Bun's `bun:sqlite` module.
 | --- | ---: | --- |
 | `PI_COT_RETENTION_DAYS` | `30` | Startup retention, integer from 1 to 36500 |
 | `PI_COT_WARN_BYTES` | `104857600` | Storage warning threshold (100 MiB) |
-| `PI_COT_THRESHOLD` | `0` | Inline character threshold for ordinary tool results |
-| `PI_COT_CODEMODE_THRESHOLD` | `2000` | Inline character threshold for codemode output |
+| `PI_COT_THRESHOLD` | `2048` | Inline/preview character limit for ordinary tool results; `0` makes unmatched outputs handle-only |
+| `PI_COT_CODEMODE_THRESHOLD` | `2000` | Inline/preview character limit for codemode output; `0` makes unmatched outputs handle-only |
 | `PI_COT_AUTO_PROFILE` | off | Set to 1 to opt into background profile generation using the active model |
 
 The database lives at `~/.local/share/pi/COT/vault.sqlite`. Exported backups are created beside it. Review the source before installing: Pi extensions run with the agent's full permissions.
@@ -77,7 +91,7 @@ bun test
 bun run build
 ```
 
-The package declares typebox and @earendil-works/pi-ai as peer dependencies provided by Pi. No compatibility tool aliases are provided.
+The build bundles typebox; @earendil-works/pi-ai is provided by Pi at runtime. No compatibility tool aliases are provided.
 
 ## License
 

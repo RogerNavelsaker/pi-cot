@@ -11,30 +11,77 @@ export interface ToolTarget {
 
 const filterTypes = ["lines", "contains", "regex", "json-path", "truncate"];
 
+function shellCommandStart(command: string): string {
+  let start = command.trimStart();
+  while (true) {
+    const cdPrefix = start.match(/^cd\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+)\s*(?:&&|;)\s*/);
+    if (!cdPrefix) break;
+    start = start.slice(cdPrefix[0].length).trimStart();
+  }
+  return start.replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|'[^']*'|[^\s;&|]+)\s+)+/, "");
+}
+
+function startsWithCommandPrefix(command: string, prefix: string): boolean {
+  if (!command.startsWith(prefix)) return false;
+  const next = command[prefix.length];
+  return next === undefined || /[\s|&;]/.test(next);
+}
+
 export function deriveTarget(toolName: string, input: any): ToolTarget {
   if (toolName === "bash" && typeof input?.command === "string") {
-    const command = input.command.trimStart();
-    const match = command.match(/^(?:[A-Za-z_][A-Za-z0-9_]*=[^\s]+\s+)*(?:[^\s;|&]+\/)?([A-Za-z0-9_.+-]+)(?:\s+([A-Za-z0-9_.+-]+))?/);
-    const executable = match?.[1]?.toLowerCase();
-    if (executable) {
-      const subcommand = executable === "git" && match?.[2] && !match[2].startsWith("-")
-        ? match[2].toLowerCase()
-        : undefined;
-      const commandPrefix = subcommand ? executable + " " + subcommand : executable;
-      return { key: "bash:" + commandPrefix, selector: { toolName, commandPrefix } };
-    }
+    const command = shellCommandStart(input.command);
+    const commandPrefix = commandPrefixes.find(prefix => startsWithCommandPrefix(command, prefix))
+      ?? command.match(/^(?:[^\s;|&]+\/)?([A-Za-z0-9_.+-]+)/)?.[1]?.toLowerCase();
+    if (commandPrefix) return { key: "bash:" + commandPrefix, selector: { toolName, commandPrefix } };
   }
   return { key: toolName, selector: { toolName } };
 }
+
+const linePreview = (commandPrefix: string) => {
+  const log = /(?:^| )(?:docker logs|kubectl logs|journalctl)$/.test(commandPrefix);
+  const listing = /^(?:ls|tree|find|fd|rg|grep|ast-grep|wc)$/.test(commandPrefix);
+  const diagnostics = /(?:test|pytest|jest|vitest|rspec|playwright|build|check|clippy|lint|format|install|migrate|outdated|up)$/.test(commandPrefix);
+  const [maxLines, headLines, tailLines] = log ? [120, 12, 100]
+    : listing ? [120, 90, 25]
+    : diagnostics ? [160, 45, 110]
+    : commandPrefix === "git diff" ? [180, 110, 60]
+    : [120, 75, 40];
+  return {
+    name: `builtin:${commandPrefix.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "")}`,
+    description: `Keep a useful head/tail view of long ${commandPrefix} output.`,
+    selector: { toolName: "bash", commandPrefix },
+    spec: { type: "truncate", maxLines, headLines, tailLines },
+    builtin: true,
+  };
+};
+
+// Source-derived command families from LeanCTX and RTK, plus common language runtimes and shell utilities.
+const commandPrefixes = [...new Set([
+  // LeanCTX pattern families.
+  ..."alembic ansible argocd artisan aws bazel buf bun cargo clang cmake composer cosign curl dbt deno docker dotnet eslint fd find flutter flyway gem gh glab go golangci-lint grep grype helm jj just kubectl linkerd ls make maven mise mix mlflow mypy mysql next ninja npm ollama php pip playwright pnpm poetry prettier prisma psql pulumi pytest ruby ruff semgrep spark swift swiftlint syft terraform trivy wget zig".split(" "),
+  // RTK documented operation prefixes, including multi-word subcommands.
+  "git status", "git log", "git diff", "git show", "git stash list",
+  "gh pr view", "gh pr checks", "gh run list", "gh issue view", "gt log", "gt status",
+  "cargo test", "cargo nextest", "cargo build", "cargo check", "cargo clippy",
+  "jest", "vitest", "tsc", "eslint", "pnpm list", "pnpm outdated", "next build", "prisma migrate", "playwright test",
+  "pytest", "ruff check", "mypy", "pip install", "go test", "golangci-lint run", "go build",
+  "rspec", "rubocop", "rake", "dotnet build", "dotnet test", "dotnet format",
+  "docker ps", "docker images", "docker logs", "docker compose up", "kubectl get pods", "kubectl logs",
+  "ls", "find", "grep", "ast-grep", "diff", "wc",
+  // Context Mode runtimes and common command aliases.
+  ..."adb tree rg yarn npx python python3 node nodejs java perl R bash sh rustc gradle mvn tsc tsx ts-node jq yq xargs sed awk cat head tail du df free ps top htop systemctl journalctl uname".split(" "),
+  "bun test", "npm test", "pnpm test", "yarn test", "bun run", "git commit",
+])].sort((a, b) => b.length - a.length);
+
+// All families use deterministic head/tail reduction; unmatched oversized output still gets a bounded preview.
+export const BUILTIN_FILTERS = commandPrefixes.map(linePreview);
 
 export function matchesSelector(toolName: string, input: any, selector: FilterSelector): boolean {
   if (toolName !== selector.toolName) return false;
   if (selector.commandPrefix !== undefined) {
     if (typeof input?.command !== "string") return false;
-    const command = input.command.trimStart();
-    if (!command.startsWith(selector.commandPrefix)) return false;
-    const next = command[selector.commandPrefix.length];
-    if (next !== undefined && !/[\s|&;]/.test(next)) return false;
+    const command = shellCommandStart(input.command);
+    if (!startsWithCommandPrefix(command, selector.commandPrefix)) return false;
   }
   if (selector.input) {
     if (!input || typeof input !== "object") return false;

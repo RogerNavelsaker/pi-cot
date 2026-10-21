@@ -9,9 +9,10 @@ Bun.env.HOME = home;
 Bun.env.PI_SESSION_ID = "cot-test-session";
 Bun.env.PI_COT_AUTO_PROFILE = "1";
 
-const { default: registerCOT } = await import("../extensions/cot.ts?test");
+const { default: registerCOT, resolveGenerationModel } = await import("../extensions/cot.ts?test");
 const tools = new Map<string, any>();
 const events = new Map<string, any>();
+const commands = new Map<string, any>();
 let generatedRequest: any;
 registerCOT({
   on(name: string, handler: any) {
@@ -19,6 +20,9 @@ registerCOT({
   },
   registerTool(tool: any) {
     tools.set(tool.name, tool);
+  },
+  registerCommand(name: string, command: any) {
+    commands.set(name, command);
   },
 }, {
   async generateProfile(request: any) {
@@ -131,6 +135,11 @@ test("capture, retrieve, filter, save, session-scope, and export", async () => {
   });
   expect(searched.content[0].text).toContain(handle);
 
+  const vaultStatus = await tools.get("cot_vault").execute("test", { action: "status" });
+  const status = JSON.parse(vaultStatus.content[0].text);
+  expect(status.databaseBytes).toBeGreaterThan(0);
+  expect(status.expiredAtStartup).toBeGreaterThanOrEqual(0);
+
   const exported = await tools.get("cot_vault").execute("test", { action: "export" });
   const backupPath = exported.content[0].text.match(/SQLite backup created: (.+)/)?.[1];
   expect(backupPath).toBeTruthy();
@@ -170,13 +179,13 @@ test("saved selectors automatically filter matching tool results and preserve ra
     ...event,
     input: { command: "git statusx" },
   }, {});
-  expect(mismatch.content[0].text).toContain("Stored tool result");
+  expect(mismatch).toBeUndefined();
 
   const listed = await tools.get("cot_filter").execute("test", {});
   expect(listed.content[0].text).toContain('"commandPrefix":"git status"');
 });
 
-test("repeated large unmatched output triggers quiet profile generation", async () => {
+test("repeated large built-in output triggers quiet profile generation", async () => {
   generatedRequest = undefined;
   const base = {
     toolName: "bash",
@@ -236,6 +245,7 @@ test("legacy schemas migrate additively and learning stays off without opt-in", 
       if (name === "tool_result") resultHandler = handler;
     },
     registerTool() {},
+    registerCommand() {},
   }, {
     async generateProfile() {
       generationCalls++;
@@ -266,4 +276,89 @@ test("legacy schemas migrate additively and learning stays off without opt-in", 
   expect(migrated.prepare("SELECT description FROM filters WHERE name='legacy-filter'").get().description).toBe("kept across migration");
   migrated.close();
   rmSync(legacyHome, { recursive: true, force: true });
+});
+
+
+test("/cot settings toggles learning and selects a generation model", async () => {
+  const selections = [
+    "Adaptive profile learning: On",
+    "Profile-generation model: Session model",
+    "Test model (test/test-model)",
+    "Close",
+  ];
+  const model = { provider: "test", id: "test-model", name: "Test model" };
+  const ctx = {
+    hasUI: true,
+    modelRegistry: { getAvailable: () => [model] },
+    ui: {
+      async select() { return selections.shift(); },
+      notify() {},
+    },
+  };
+  await commands.get("cot").handler("", ctx);
+  const db = new Database(join(home, ".local/share/pi/COT/vault.sqlite"));
+  expect(db.query("SELECT value FROM settings WHERE key='auto_profile_enabled'").get()).toEqual({ value: "0" });
+  expect(JSON.parse(db.query("SELECT value FROM settings WHERE key='generation_model'").get()!.value)).toEqual({ provider: "test", id: "test-model" });
+  db.close();
+
+  const sessionModel = { provider: "session", id: "active" };
+  expect(resolveGenerationModel({ model: sessionModel, modelRegistry: { getAvailable: () => [model] } })).toBe(model);
+  expect(resolveGenerationModel({ model: sessionModel, modelRegistry: { getAvailable: () => [] } })).toBe(sessionModel);
+});
+
+
+test("built-in adb filter returns useful output in the original tool response", async () => {
+  const body = Array.from({ length: 200 }, (_, i) => `log line ${i}`).join("\n");
+  const result = await events.get("tool_result")({
+    toolName: "bash",
+    input: { command: "adb logcat" },
+    content: [{ type: "text", text: body }],
+    sessionId: "builtin-filter-session",
+    isError: false,
+  }, {});
+  expect(result.content[0].text).toContain("Applied built-in filter");
+  expect(result.content[0].text).toContain("lines omitted");
+  expect(result.content[0].text).toContain("raw output handle");
+});
+
+test("unmatched large outputs include a compact preview and recovery handle", async () => {
+  const body = "start-" + "x".repeat(5000) + "-end";
+  const result = await events.get("tool_result")({
+    toolName: "python3",
+    input: { command: "python3 -c 'print(1)'" },
+    content: [{ type: "text", text: body }],
+    sessionId: "preview-session",
+    isError: false,
+  }, {});
+  const preview = result.content[0].text;
+  expect(preview).toContain("COT built-in preview");
+  expect(preview).toContain("full output handle");
+  expect(preview).toContain("start-");
+  expect(preview).toContain("-end");
+  expect(preview.length).toBeLessThanOrEqual(2200);
+});
+
+test("/cot status reports learning state and /cot settings exposes every setting", async () => {
+  let status = "";
+  const ctx = {
+    hasUI: true,
+    modelRegistry: { getAvailable: () => [] },
+    ui: {
+      async select(_title: string, options: string[]) {
+        if (_title === "COT settings") menuOptions = options;
+        return "Close";
+      },
+      notify(message: string) { status = message; },
+      async input() { return undefined; },
+      async confirm() { return false; },
+    },
+  };
+  let menuOptions: string[] = [];
+  await commands.get("cot").handler("status", ctx);
+  expect(status).toContain("Adaptive learning:");
+  expect(status).toContain("Generations in flight:");
+  await commands.get("cot").handler("settings", ctx);
+  for (const setting of ["Adaptive profile learning", "Profile-generation model", "Built-in filters", "Regular output preview limit", "Codemode output preview limit", "Output retention", "Storage warning threshold"]) {
+    expect(menuOptions.some(option => option.includes(setting))).toBe(true);
+  }
 });
