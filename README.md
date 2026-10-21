@@ -24,8 +24,8 @@ The GitHub repository must exist before these commands work. Pi's documented Git
 
 - Stores textual tool results in SQLite and returns a handle when output exceeds its inline threshold.
 - Retrieves stored output by handle, with pagination and optional session scoping.
-- Applies declarative lines, contains, regex, and json-path filters, individually or as ordered pipelines; each step consumes the previous step’s output.
-- Saves, replaces, lists, applies, and deletes reusable filters.
+- Applies declarative lines, contains, regex, json-path, and truncate filters, individually or as ordered pipelines; each step consumes the previous step’s output.
+- Saves, replaces, lists, applies, and deletes reusable filters; optional selectors can apply profiles automatically to matching tool calls.
 - Lists sessions; lists and searches outputs by session. Cross-session search requires explicit `all_sessions: true`.
 - Expires output at startup (30 days by default), reports storage size warnings, supports dry-run-first pruning, and creates explicit SQLite backups.
 
@@ -36,7 +36,15 @@ The GitHub repository must exist before these commands work. Pi's documented Git
 3. If the pattern is reusable, save a small declarative filter with `cot_save_filter`.
 4. Reapply the saved filter when similar output appears; retrieve the raw handle with `cot_get` when more detail is needed.
 
-**Current limitation:** filters are applied after the output is stored and made available. Automatic matching and filtering of command output before it reaches the model is the next design milestone; this package does not yet promise that behavior. The model curates filters through explicit tool calls rather than an autonomous background learner.
+Profiles without a selector remain available for explicit cot_filter use. A saved profile with a selector is applied automatically to matching tool results; the original output remains stored and the result includes a handle for recovery.
+
+### Adaptive profile learning (opt-in)
+
+Automatic learning is off by default. Set PI_COT_AUTO_PROFILE=1 to allow COT to ask the currently active Pi model for a profile after it sees at least three unmatched outputs of 8,192 characters or more from the same tool/command family in one session within 24 hours. The background request receives up to three unchanged 4,096-character excerpts; they may contain secrets. The model does not receive the full tool arguments. Enabling this setting explicitly opts into sending these excerpts to the active model; rely on the session model or an external proxy/MCP for protection. A candidate must use the bounded declarative filter DSL (generated regex filters are disabled), pass model validation, preserve non-empty examples, and reduce the stored examples by at least 20% before COT saves it.
+
+Eligible output excerpts are sent unchanged to the active model provider and may contain sensitive data. Keep learning disabled unless you explicitly accept this; protection must come from the session model or an external proxy/MCP. Originals stay local in COT storage and remain retrievable by handle.
+
+Manual profiles can target a tool and, for shell tools, a command family. For example, save a contains filter with selector { "toolName": "bash", "commandPrefix": "git status" } to apply it to git status calls but not unrelated shell commands. Exact top-level input fields can also be used in a selector.
 
 ## Tools
 
@@ -56,6 +64,7 @@ COT requires a Pi runtime that supports Bun's `bun:sqlite` module.
 | `PI_COT_WARN_BYTES` | `104857600` | Storage warning threshold (100 MiB) |
 | `PI_COT_THRESHOLD` | `0` | Inline character threshold for ordinary tool results |
 | `PI_COT_CODEMODE_THRESHOLD` | `2000` | Inline character threshold for codemode output |
+| `PI_COT_AUTO_PROFILE` | off | Set to 1 to opt into background profile generation using the active model |
 
 The database lives at `~/.local/share/pi/COT/vault.sqlite`. Exported backups are created beside it. Review the source before installing: Pi extensions run with the agent's full permissions.
 
@@ -68,7 +77,7 @@ bun test
 bun run build
 ```
 
-The package declares `typebox` as a peer dependency provided by Pi. No compatibility tool aliases are provided.
+The package declares typebox and @earendil-works/pi-ai as peer dependencies provided by Pi. No compatibility tool aliases are provided.
 
 ## License
 
