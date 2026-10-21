@@ -17,7 +17,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS outputs (
     id TEXT PRIMARY KEY, created_at TEXT NOT NULL, tool TEXT NOT NULL,
     is_error INTEGER NOT NULL, body TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT 'unknown',
-    target_key TEXT
+    target_key TEXT, selector TEXT
   );
   CREATE TABLE IF NOT EXISTS filters (
     name TEXT PRIMARY KEY, description TEXT NOT NULL, spec TEXT NOT NULL,
@@ -33,6 +33,10 @@ if (!outputColumns.some((column: any) => column.name === "session_id")) {
 }
 if (!outputColumns.some((column: any) => column.name === "target_key")) {
   db.exec("ALTER TABLE outputs ADD COLUMN target_key TEXT");
+}
+if (!outputColumns.some((column: any) => column.name === "selector")) {
+  db.exec("ALTER TABLE outputs ADD COLUMN selector TEXT");
+  db.exec("VACUUM");
 }
 const filterColumns = db.prepare("PRAGMA table_info(filters)").all() as any[];
 if (!filterColumns.some((column: any) => column.name === "selector")) {
@@ -155,10 +159,10 @@ function eligibleSampleGroups(): number {
     GROUP BY session_id, target_key HAVING count(*)>=?
   )`).get(MIN_LEARNING_OUTPUT_CHARS, since, MIN_LEARNING_EXAMPLES) as any).count;
 }
-function maybeLearnProfile(ctx: any, target: ReturnType<typeof deriveTarget>, sessionId: string): void {
-  if (!autoLearningEnabled || sessionId === "unknown") return;
+function maybeLearnProfile(ctx: any, target: ReturnType<typeof deriveTarget>, sessionId: string, manual = false): void {
+  if ((!manual && !autoLearningEnabled) || sessionId === "unknown") return;
   const key = `${sessionId}:${target.key}`;
-  if (learningInFlight.has(key) || (learningCooldown.get(key) ?? 0) > Date.now()) return;
+  if (learningInFlight.has(key) || (!manual && (learningCooldown.get(key) ?? 0) > Date.now())) return;
   const since = new Date(Date.now() - LEARNING_WINDOW_MS).toISOString();
   const examples = db.prepare(`SELECT body FROM outputs WHERE session_id=? AND target_key=? AND created_at>=? AND length(body)>=? ORDER BY created_at DESC LIMIT ?`)
     .all(sessionId, target.key, since, MIN_LEARNING_OUTPUT_CHARS, MIN_LEARNING_EXAMPLES) as any[];
@@ -190,23 +194,23 @@ export default function (pi: any, dependencies: any = {}) {
   pi.registerCommand("cot", {
     description: "COT status and settings",
     handler: async (args: string, ctx: any) => {
-      const subcommand = args.trim().toLowerCase() || "settings";
-      if (subcommand === "status") {
-        const saved = (db.prepare("SELECT count(*) AS count FROM filters").get() as any).count;
-        const learned = (db.prepare("SELECT count(*) AS count FROM filters WHERE name LIKE 'auto:%'").get() as any).count;
-        const lastStatus = getSetting("last_generation_status") ?? "never";
-        const lastAt = getSetting("last_generation_at") ?? "never";
-        const lines = [
-          `Adaptive learning: ${autoLearningEnabled ? "enabled" : "disabled"}`,
-          `Generation model: ${generationModelLabel(ctx)}`,
-          `Filters: ${builtinFiltersEnabled ? `built-ins enabled (${BUILTIN_FILTERS.length})` : `built-ins disabled (${BUILTIN_FILTERS.length} available)`}; ${saved} saved (${learned} learned)`,
-          `Eligible sample groups (24h): ${eligibleSampleGroups()}`,
-          `Generations in flight: ${learningInFlight.size}`,
-          `Last generation: ${lastStatus} (${lastAt})`,
-          `Output limits: ${threshold} chars; codemode ${codemodeThreshold} chars`,
-          `Retention: ${retentionDays} days; storage warning: ${formatBytes(warnBytes)}`,
-        ];
-        ctx.ui.notify(lines.join("\n"));
+      const subcommand = args.trim().toLowerCase();
+      if (subcommand === "learn") {
+        const sessionId = ctx.sessionManager?.getSessionId?.() ?? Bun.env.PI_SESSION_ID ?? "unknown";
+        const since = new Date(Date.now() - LEARNING_WINDOW_MS).toISOString();
+        const groups = sessionId === "unknown" ? [] : db.prepare(`SELECT target_key, selector FROM outputs
+          WHERE session_id=? AND target_key IS NOT NULL AND selector IS NOT NULL AND length(body)>=? AND created_at>=?
+          GROUP BY target_key, selector HAVING count(*)>=?`).all(sessionId, MIN_LEARNING_OUTPUT_CHARS, since, MIN_LEARNING_EXAMPLES) as any[];
+        if (!groups.length) {
+          ctx.ui.notify("No eligible captured outputs in this session yet. COT needs repeated large outputs from the same tool target.");
+          return;
+        }
+        for (const group of groups) {
+          try {
+            maybeLearnProfile(ctx, { key: group.target_key, selector: JSON.parse(group.selector) }, sessionId, true);
+          } catch {}
+        }
+        ctx.ui.notify(`Profile learning requested for ${groups.length} eligible tool target(s). Unchanged excerpts may contain secrets and are sent to the active model.`);
         return;
       }
       if (subcommand === "profiles") {
@@ -214,8 +218,8 @@ export default function (pi: any, dependencies: any = {}) {
         ctx.ui.notify(profiles.length ? profiles.map(p => `${p.name}: ${p.description}`).join("\n") : "COT has no saved profiles yet.");
         return;
       }
-      if (subcommand !== "settings") {
-        ctx.ui.notify("Usage: /cot status | /cot settings | /cot profiles", "warning");
+      if (subcommand !== "") {
+        ctx.ui.notify("Usage: /cot [learn|profiles]", "warning");
         return;
       }
       if (!ctx.hasUI) {
@@ -298,8 +302,8 @@ export default function (pi: any, dependencies: any = {}) {
     const key = id();
     const sessionId = event.sessionId ?? event.context?.sessionId ?? "unknown";
     const target = deriveTarget(event.toolName, event.input);
-    db.prepare("INSERT INTO outputs (id, created_at, tool, is_error, body, session_id, target_key) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(key, new Date().toISOString(), event.toolName, event.isError ? 1 : 0, body, sessionId, target.key);
+    db.prepare("INSERT INTO outputs (id, created_at, tool, is_error, body, session_id, target_key, selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(key, new Date().toISOString(), event.toolName, event.isError ? 1 : 0, body, sessionId, target.key, JSON.stringify(target.selector));
 
     checkStorage();
     const profiles = [

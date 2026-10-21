@@ -56,8 +56,7 @@ Manual profiles can target a tool and, for shell tools, a command family. For ex
 
 ## Slash commands
 
-- `/cot status` reports whether adaptive learning is enabled, the generation model, built-in/saved/learned profile counts, eligible sample groups, in-flight generation, last result, output limits, retention, and the storage-warning threshold.
-- `/cot settings` opens the settings menu for every runtime setting: adaptive learning, generation model, built-in filters, regular and codemode preview limits, output retention, and storage-warning threshold.
+- `/cot` opens the settings menu for every runtime setting: adaptive learning, generation model, built-in filters, regular and codemode preview limits, output retention, and storage-warning threshold.
 - `/cot profiles` lists saved profiles; profile creation and updates remain available through the COT tools.
 
 Settings are global and stored in `~/.local/share/pi/COT/vault.sqlite`. Stored choices override environment defaults. Retention reductions that would delete stored outputs require confirmation.

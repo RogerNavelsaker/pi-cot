@@ -4,7 +4,7 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, statSync } from "fs";
 import { join } from "path";
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/system/memory/metrics.mjs
+// node_modules/typebox/build/system/memory/metrics.mjs
 var Metrics = {
   assign: 0,
   create: 0,
@@ -12,7 +12,7 @@ var Metrics = {
   discard: 0,
   update: 0
 };
-// ../../../.pi/agent/npm/node_modules/typebox/build/guard/guard.mjs
+// node_modules/typebox/build/guard/guard.mjs
 function IsArray(value) {
   return Array.isArray(value);
 }
@@ -46,7 +46,7 @@ function HasPropertyKey(value, key) {
 function Keys(value) {
   return Object.getOwnPropertyNames(value);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/system/memory/clone.mjs
+// node_modules/typebox/build/system/memory/clone.mjs
 function IsGuard(value) {
   return IsObject(value) && HasPropertyKey(value, "~guard");
 }
@@ -80,7 +80,7 @@ function Clone(value) {
   Metrics.clone += 1;
   return FromValue(value);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/system/settings/settings.mjs
+// node_modules/typebox/build/system/settings/settings.mjs
 var settings = {
   immutableTypes: false,
   maxErrors: 8,
@@ -92,7 +92,7 @@ var settings = {
 function Get() {
   return settings;
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/system/memory/create.mjs
+// node_modules/typebox/build/system/memory/create.mjs
 function MergeHidden(left, right) {
   for (const key of Object.keys(right)) {
     Object.defineProperty(left, key, {
@@ -114,7 +114,7 @@ function Create(hidden, enumerable, options = {}) {
   const withHidden = settings.enumerableKind ? Merge(withOptions, hidden) : MergeHidden(withOptions, hidden);
   return settings.immutableTypes ? Object.freeze(withHidden) : withHidden;
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/system/memory/update.mjs
+// node_modules/typebox/build/system/memory/update.mjs
 function Update(current, hidden, enumerable) {
   Metrics.update += 1;
   const settings = Get();
@@ -137,11 +137,11 @@ function Update(current, hidden, enumerable) {
   }
   return result;
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/schema.mjs
+// node_modules/typebox/build/type/types/schema.mjs
 function IsSchema(value) {
   return IsObject(value);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/_optional.mjs
+// node_modules/typebox/build/type/types/_optional.mjs
 function OptionalAdd(type) {
   return Update(type, { "~optional": true }, {});
 }
@@ -152,23 +152,23 @@ function IsOptional(value) {
   return IsSchema(value) && HasPropertyKey(value, "~optional");
 }
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/properties.mjs
+// node_modules/typebox/build/type/types/properties.mjs
 function RequiredArray(properties) {
   return Keys(properties).filter((key) => !IsOptional(properties[key]));
 }
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/object.mjs
+// node_modules/typebox/build/type/types/object.mjs
 function _Object_(properties, options = {}) {
   const requiredKeys = RequiredArray(properties);
   const required = requiredKeys.length > 0 ? { required: requiredKeys } : {};
   return Create({ "~kind": "Object" }, { type: "object", ...required, properties }, options);
 }
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/union.mjs
+// node_modules/typebox/build/type/types/union.mjs
 function Union(anyOf, options = {}) {
   return Create({ "~kind": "Union" }, { anyOf }, options);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/system/hashing/hash.mjs
+// node_modules/typebox/build/system/hashing/hash.mjs
 var ByteMarker;
 (function(ByteMarker) {
   ByteMarker[ByteMarker["Array"] = 0] = "Array";
@@ -193,16 +193,16 @@ var F64 = new Float64Array(1);
 var F64In = new DataView(F64.buffer);
 var F64Out = new Uint8Array(F64.buffer);
 var encoder = new TextEncoder;
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/boolean.mjs
+// node_modules/typebox/build/type/types/boolean.mjs
 function Boolean2(options) {
   return Create({ "~kind": "Boolean" }, { type: "boolean" }, options);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/integer.mjs
+// node_modules/typebox/build/type/types/integer.mjs
 var IntegerPattern = "-?(?:0|[1-9][0-9]*)";
 function Integer(options) {
   return Create({ "~kind": "Integer" }, { type: "integer" }, options);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/literal.mjs
+// node_modules/typebox/build/type/types/literal.mjs
 class InvalidLiteralValue extends Error {
   constructor(value) {
     super(`Invalid Literal value`);
@@ -222,19 +222,19 @@ function LiteralTypeName(value) {
 function Literal(value, options) {
   return Create({ "~kind": "Literal" }, { type: LiteralTypeName(value), const: value }, options);
 }
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/number.mjs
+// node_modules/typebox/build/type/types/number.mjs
 var NumberPattern = "-?(?:0|[1-9][0-9]*)(?:.[0-9]+)?";
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/string.mjs
+// node_modules/typebox/build/type/types/string.mjs
 var StringPattern = ".*";
 function String2(options) {
   return Create({ "~kind": "String" }, { type: "string" }, options);
 }
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/types/record.mjs
+// node_modules/typebox/build/type/types/record.mjs
 var IntegerKey = `^${IntegerPattern}$`;
 var NumberKey = `^${NumberPattern}$`;
 var StringKey = `^${StringPattern}$`;
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/script/token/internal/char.mjs
+// node_modules/typebox/build/type/script/token/internal/char.mjs
 function Range(start, end) {
   return Array.from({ length: end - start + 1 }, (_, i) => String.fromCharCode(start + i));
 }
@@ -248,17 +248,17 @@ var Digit = [Zero, ...NonZero];
 var UnderScore = "_";
 var DollarSign = "$";
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/script/token/unsigned_integer.mjs
+// node_modules/typebox/build/type/script/token/unsigned_integer.mjs
 var AllowedDigits = [...Digit, UnderScore];
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/script/token/ident.mjs
+// node_modules/typebox/build/type/script/token/ident.mjs
 var Initial = [...Alpha, UnderScore, DollarSign];
 var Remaining = [...Initial, ...Digit];
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/script/token/unsigned_number.mjs
+// node_modules/typebox/build/type/script/token/unsigned_number.mjs
 var AllowedDigits2 = [...Digit, UnderScore];
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/engine/helpers/keys.mjs
+// node_modules/typebox/build/type/engine/helpers/keys.mjs
 var integerKeyPattern = new RegExp("^(?:0|[1-9][0-9]*)$");
 
-// ../../../.pi/agent/npm/node_modules/typebox/build/type/engine/indexed/from_object.mjs
+// node_modules/typebox/build/type/engine/indexed/from_object.mjs
 var NumericKeyPattern = new RegExp(IntegerKey);
 // extensions/profiles.ts
 var filterTypes = ["lines", "contains", "regex", "json-path", "truncate"];
@@ -538,7 +538,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS outputs (
     id TEXT PRIMARY KEY, created_at TEXT NOT NULL, tool TEXT NOT NULL,
     is_error INTEGER NOT NULL, body TEXT NOT NULL, session_id TEXT NOT NULL DEFAULT 'unknown',
-    target_key TEXT
+    target_key TEXT, selector TEXT
   );
   CREATE TABLE IF NOT EXISTS filters (
     name TEXT PRIMARY KEY, description TEXT NOT NULL, spec TEXT NOT NULL,
@@ -553,6 +553,10 @@ if (!outputColumns.some((column) => column.name === "session_id")) {
 }
 if (!outputColumns.some((column) => column.name === "target_key")) {
   db.exec("ALTER TABLE outputs ADD COLUMN target_key TEXT");
+}
+if (!outputColumns.some((column) => column.name === "selector")) {
+  db.exec("ALTER TABLE outputs ADD COLUMN selector TEXT");
+  db.exec("VACUUM");
 }
 var filterColumns = db.prepare("PRAGMA table_info(filters)").all();
 if (!filterColumns.some((column) => column.name === "selector")) {
@@ -683,19 +687,11 @@ function recordLearningStatus(status) {
   setSetting("last_generation_status", status);
   setSetting("last_generation_at", new Date().toISOString());
 }
-function eligibleSampleGroups() {
-  const since = new Date(Date.now() - LEARNING_WINDOW_MS).toISOString();
-  return db.prepare(`SELECT count(*) AS count FROM (
-    SELECT session_id, target_key FROM outputs
-    WHERE target_key IS NOT NULL AND length(body)>=? AND created_at>=?
-    GROUP BY session_id, target_key HAVING count(*)>=?
-  )`).get(MIN_LEARNING_OUTPUT_CHARS, since, MIN_LEARNING_EXAMPLES).count;
-}
-function maybeLearnProfile(ctx, target, sessionId) {
-  if (!autoLearningEnabled || sessionId === "unknown")
+function maybeLearnProfile(ctx, target, sessionId, manual = false) {
+  if (!manual && !autoLearningEnabled || sessionId === "unknown")
     return;
   const key = `${sessionId}:${target.key}`;
-  if (learningInFlight.has(key) || (learningCooldown.get(key) ?? 0) > Date.now())
+  if (learningInFlight.has(key) || !manual && (learningCooldown.get(key) ?? 0) > Date.now())
     return;
   const since = new Date(Date.now() - LEARNING_WINDOW_MS).toISOString();
   const examples = db.prepare(`SELECT body FROM outputs WHERE session_id=? AND target_key=? AND created_at>=? AND length(body)>=? ORDER BY created_at DESC LIMIT ?`).all(sessionId, target.key, since, MIN_LEARNING_OUTPUT_CHARS, MIN_LEARNING_EXAMPLES);
@@ -732,24 +728,23 @@ function cot_default(pi, dependencies = {}) {
   pi.registerCommand("cot", {
     description: "COT status and settings",
     handler: async (args, ctx) => {
-      const subcommand = args.trim().toLowerCase() || "settings";
-      if (subcommand === "status") {
-        const saved = db.prepare("SELECT count(*) AS count FROM filters").get().count;
-        const learned = db.prepare("SELECT count(*) AS count FROM filters WHERE name LIKE 'auto:%'").get().count;
-        const lastStatus = getSetting("last_generation_status") ?? "never";
-        const lastAt = getSetting("last_generation_at") ?? "never";
-        const lines = [
-          `Adaptive learning: ${autoLearningEnabled ? "enabled" : "disabled"}`,
-          `Generation model: ${generationModelLabel(ctx)}`,
-          `Filters: ${builtinFiltersEnabled ? `built-ins enabled (${BUILTIN_FILTERS.length})` : `built-ins disabled (${BUILTIN_FILTERS.length} available)`}; ${saved} saved (${learned} learned)`,
-          `Eligible sample groups (24h): ${eligibleSampleGroups()}`,
-          `Generations in flight: ${learningInFlight.size}`,
-          `Last generation: ${lastStatus} (${lastAt})`,
-          `Output limits: ${threshold} chars; codemode ${codemodeThreshold} chars`,
-          `Retention: ${retentionDays} days; storage warning: ${formatBytes(warnBytes)}`
-        ];
-        ctx.ui.notify(lines.join(`
-`));
+      const subcommand = args.trim().toLowerCase();
+      if (subcommand === "learn") {
+        const sessionId = ctx.sessionManager?.getSessionId?.() ?? Bun.env.PI_SESSION_ID ?? "unknown";
+        const since = new Date(Date.now() - LEARNING_WINDOW_MS).toISOString();
+        const groups = sessionId === "unknown" ? [] : db.prepare(`SELECT target_key, selector FROM outputs
+          WHERE session_id=? AND target_key IS NOT NULL AND selector IS NOT NULL AND length(body)>=? AND created_at>=?
+          GROUP BY target_key, selector HAVING count(*)>=?`).all(sessionId, MIN_LEARNING_OUTPUT_CHARS, since, MIN_LEARNING_EXAMPLES);
+        if (!groups.length) {
+          ctx.ui.notify("No eligible captured outputs in this session yet. COT needs repeated large outputs from the same tool target.");
+          return;
+        }
+        for (const group of groups) {
+          try {
+            maybeLearnProfile(ctx, { key: group.target_key, selector: JSON.parse(group.selector) }, sessionId, true);
+          } catch {}
+        }
+        ctx.ui.notify(`Profile learning requested for ${groups.length} eligible tool target(s). Unchanged excerpts may contain secrets and are sent to the active model.`);
         return;
       }
       if (subcommand === "profiles") {
@@ -758,8 +753,8 @@ function cot_default(pi, dependencies = {}) {
 `) : "COT has no saved profiles yet.");
         return;
       }
-      if (subcommand !== "settings") {
-        ctx.ui.notify("Usage: /cot status | /cot settings | /cot profiles", "warning");
+      if (subcommand !== "") {
+        ctx.ui.notify("Usage: /cot [learn|profiles]", "warning");
         return;
       }
       if (!ctx.hasUI) {
@@ -856,7 +851,7 @@ function cot_default(pi, dependencies = {}) {
     const key = id();
     const sessionId = event.sessionId ?? event.context?.sessionId ?? "unknown";
     const target = deriveTarget(event.toolName, event.input);
-    db.prepare("INSERT INTO outputs (id, created_at, tool, is_error, body, session_id, target_key) VALUES (?, ?, ?, ?, ?, ?, ?)").run(key, new Date().toISOString(), event.toolName, event.isError ? 1 : 0, body, sessionId, target.key);
+    db.prepare("INSERT INTO outputs (id, created_at, tool, is_error, body, session_id, target_key, selector) VALUES (?, ?, ?, ?, ?, ?, ?, ?)").run(key, new Date().toISOString(), event.toolName, event.isError ? 1 : 0, body, sessionId, target.key, JSON.stringify(target.selector));
     checkStorage();
     const profiles = [
       ...builtinFiltersEnabled ? BUILTIN_FILTERS : [],

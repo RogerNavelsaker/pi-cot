@@ -272,6 +272,7 @@ test("legacy schemas migrate additively and learning stays off without opt-in", 
   const outputColumns = migrated.prepare("PRAGMA table_info(outputs)").all().map((row: any) => row.name);
   const filterColumns = migrated.prepare("PRAGMA table_info(filters)").all().map((row: any) => row.name);
   expect(outputColumns).toContain("target_key");
+  expect(outputColumns).toContain("selector");
   expect(filterColumns).toContain("selector");
   expect(migrated.prepare("SELECT description FROM filters WHERE name='legacy-filter'").get().description).toBe("kept across migration");
   migrated.close();
@@ -338,8 +339,9 @@ test("unmatched large outputs include a compact preview and recovery handle", as
   expect(preview.length).toBeLessThanOrEqual(2200);
 });
 
-test("/cot status reports learning state and /cot settings exposes every setting", async () => {
-  let status = "";
+test("bare /cot opens settings and /cot learn reports when samples are missing", async () => {
+  let notified = "";
+  let menuOptions: string[] = [];
   const ctx = {
     hasUI: true,
     modelRegistry: { getAvailable: () => [] },
@@ -348,17 +350,17 @@ test("/cot status reports learning state and /cot settings exposes every setting
         if (_title === "COT settings") menuOptions = options;
         return "Close";
       },
-      notify(message: string) { status = message; },
+      notify(message: string) { notified = message; },
       async input() { return undefined; },
       async confirm() { return false; },
     },
   };
-  let menuOptions: string[] = [];
-  await commands.get("cot").handler("status", ctx);
-  expect(status).toContain("Adaptive learning:");
-  expect(status).toContain("Generations in flight:");
-  await commands.get("cot").handler("settings", ctx);
+  await commands.get("cot").handler("", ctx);
   for (const setting of ["Adaptive profile learning", "Profile-generation model", "Built-in filters", "Regular output preview limit", "Codemode output preview limit", "Output retention", "Storage warning threshold"]) {
     expect(menuOptions.some(option => option.includes(setting))).toBe(true);
   }
+  await commands.get("cot").handler("learn", ctx);
+  expect(notified).toContain("No eligible captured outputs");
+  await commands.get("cot").handler("settings", ctx);
+  expect(notified).toContain("Usage: /cot");
 });
