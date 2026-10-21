@@ -24,7 +24,7 @@ The GitHub repository must exist before these commands work. Pi's documented Git
 
 - Stores textual tool results in SQLite and returns a handle when output exceeds its inline threshold.
 - Retrieves stored output by handle, with pagination and optional session scoping.
-- Applies declarative lines, contains, regex, json-path, and truncate filters, individually or as ordered pipelines; each step consumes the previous step’s output.
+- Applies declarative lines, contains, regex, json-path, truncate, and exact-line dedupe filters, individually or as ordered pipelines; each step consumes the previous step’s output. Dedupe replaces repeats with counts and line references only when the summary is smaller; unique lines stay visible.
 - Saves, replaces, lists, applies, and deletes reusable filters; optional selectors can apply profiles automatically to matching tool calls.
 - Lists sessions; lists and searches outputs by session. Cross-session search requires explicit `all_sessions: true`.
 - Expires output at startup (30 days by default), reports storage size warnings, supports dry-run-first pruning, and creates explicit SQLite backups.
@@ -98,4 +98,4 @@ MIT. See [LICENSE](LICENSE).
 
 ## Filter pipelines
 
-A saved pipeline composes existing filter specs in order; it does not execute generated code. Example: {"steps":[{"type":"contains","query":"error"},{"type":"lines","start":1,"end":20}]}. Retrieve the original output with cot_get at any time. Delete a saved filter by name with cot_delete_filter.
+A saved pipeline composes existing filter specs in order; it does not execute generated code. Example: {"steps":[{"type":"contains","query":"error"},{"type":"lines","start":1,"end":20}]}. `contains` and `regex` results include 1-based line numbers relative to that step’s input. Retrieve the original output with cot_get at any time. Delete a saved filter by name with cot_delete_filter.

@@ -3,6 +3,38 @@ import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { applyFilter, validateFilterSpec } from "../extensions/profiles.ts";
+
+test("dedupe filter summarizes exact repeated lines with source locations", () => {
+  const warning = "warning: repeated connection retry failed after thirty seconds";
+  const input = [warning, "CRITICAL: preserve this unique failure", warning, warning, "unique tail"].join("\n");
+
+  expect(validateFilterSpec({ type: "dedupe" })).toBeUndefined();
+  expect(applyFilter(input, { type: "dedupe" })).toBe(
+    `[3 occurrences; lines 1, 3-4] ${JSON.stringify(warning)}\nCRITICAL: preserve this unique failure\nunique tail`,
+  );
+  const repeated = "warning: repeated connection retry failed after thirty seconds";
+  expect(applyFilter(`${repeated}\n${repeated}\n`, { type: "dedupe" })).toBe(
+    `[2 occurrences; lines 1-2] ${JSON.stringify(repeated)}\n`,
+  );
+});
+
+test("dedupe filter leaves output unchanged when no duplicates or no size savings", () => {
+  expect(applyFilter("first\nsecond", { type: "dedupe" })).toBe("first\nsecond");
+  expect(applyFilter("x\nx", { type: "dedupe" })).toBe("x\nx");
+});
+
+test("contains and regex filters retain source line numbers", () => {
+  const input = "noise\nCritical: stop\nmore noise\nERROR: failure";
+
+  expect(applyFilter(input, { type: "contains", query: "critical" })).toBe("2: Critical: stop");
+  expect(applyFilter(input, { type: "regex", pattern: "^error" })).toBe("4: ERROR: failure");
+});
+
+test("lines filter treats end as inclusive", () => {
+  expect(applyFilter("first\nsecond\nthird", { type: "lines", start: 2, end: 2 })).toBe("second");
+});
+
 
 const home = mkdtempSync(join(tmpdir(), "pi-cot-test-"));
 Bun.env.HOME = home;
